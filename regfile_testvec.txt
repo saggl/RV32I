@@ -1,0 +1,9 @@
+//a_rs1[4:0] a_rs2[4:0] a_rd[4:0] we rd[31:0]  exp_rs1[31:0] exp_rs2[31:0]
+00_00___XX_XX_XX_XX___00_00_00_00___00_00_00_00 // rs1[0] rs2[0]
+00_01___XX_XX_XX_XX___00_00_00_00___00_00_00_00 // rs1[0] rs2[0] rd[0]=X we
+00_00___XX_XX_XX_XX___00_00_00_00___00_00_00_00 // rs1[0] rs2[0]
+08_43___00_00_00_01___XX_XX_XX_XX___XX_XX_XX_XX // rs1[1] rs2[1] rd[1]=1 we
+08_42___XX_XX_XX_XX___00_00_00_01___00_00_00_01
+FF_FF___FF_FF_FF_FF___XX_XX_XX_XX___XX_XX_XX_XX // rs1[31] rs2[31] rd[31]=ffffffff we
+FF_FE___XX_XX_XX_XX___FF_FF_FF_FF___FF_FF_FF_FF
+0F_FE___XX_XX_XX_XX___00_00_00_01___FF_FF_FF_FF// rs1[1]  rs2[31]
