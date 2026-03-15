@@ -1,16 +1,19 @@
 `timescale 1ns / 1ps
-module immgen_tb;
+module loadstoreunit_tb;
+
 	// Inputs
-   reg [2:0] imm_sel;
-   reg [31:7] inst;
-   
+   reg [2:0] funct3;
+   reg [31:0] data_w, addr, data_rdata;
+   reg mem_rw;
    // Outputs
-   wire [31:0] imm;
+   wire [31:0] data_r, data_addr, data_wdata;
+   wire [3:0] data_we;
    // Test clock 
    reg clk ; // in this version we do not really need the clock
 
    // Expected outputs
-   reg [31:0] exp_imm;
+   reg [31:0] exp_data_r, exp_data_addr, exp_data_wdata;
+   reg [3:0] exp_data_we;
 
    // Vector and Error counts
    reg [10:0] vec_cnt, err_cnt;
@@ -18,7 +21,7 @@ module immgen_tb;
 
    // Define an array called 'testvec' that is wide enough to hold the inputs:
    //   aluop, a, b  and the expected output
-	reg [60:0] testvec [0:20-2];
+	reg [200:0] testvec [0:48];
 
    // The test clock generation
    always				// process always triggers
@@ -32,7 +35,7 @@ module immgen_tb;
 	begin
 		// Read the content of the file testvectors_hex.txt into the 
 		// array testvec. 
-		$readmemb("testbench/immgen_testvec.txt", testvec);
+		$readmemh("tb/loadstoreunit_testvec.txt", testvec);
 		err_cnt=0; // number of errors
 		vec_cnt=0; // number of vectors
 	end
@@ -43,26 +46,27 @@ module immgen_tb;
 		#20; 
 
 		// Assign the signals from the testvec array
-		{imm_sel, inst, exp_imm} = testvec[vec_cnt]; 
+		{funct3, mem_rw, data_w, addr, data_rdata, exp_data_r, exp_data_addr, exp_data_wdata, exp_data_we} = testvec[vec_cnt]; 
 
 		// Wait another 60ns after which we will be at 80ns
 		#60; 
 
 		// Check if output is not what we expect to see
-		if (imm !== exp_imm)
+		if ((data_r !== exp_data_r) | (data_addr !== exp_data_addr) | (data_wdata !== exp_data_wdata) | (data_we !== exp_data_we))
+
 		begin                                         
 			// Display message
-			$display("Error at %5d ns: imm_sel=%h inst=%h imm=%h exp_imm=%h", $time, imm_sel, inst, imm,  exp_imm);	// %h displays hex
+			$display("Error at %5d: funct3=%h data_w=%h addr=%h data_rdata=%h mem_rw=%h \n     data_r=%h     data_addr=%h     data_wdata=%h     data_we=%h \n exp_data_r=%h exp_data_addr=%h exp_data_wdata=%h exp_data_we=%h", vec_cnt+2, funct3, data_w, addr, data_rdata, mem_rw, data_r, data_addr, data_wdata, data_we, exp_data_r, exp_data_addr, exp_data_wdata, exp_data_we);	// %h displays hex
 			err_cnt = err_cnt + 1; // increment error count
 		end
 
 		vec_cnt = vec_cnt + 1; // next vector
 	
 		// We use === so that we can also test for X
-		if ((testvec[vec_cnt][60:57] === 4'bxxxx))
+		if ((testvec[vec_cnt][200:197] === 4'bxxxx))
 		begin
 			// End of test, no more entries...
-			$display ("%d tests completed with %d errors: immgen", vec_cnt, err_cnt);
+			$display ("%d tests completed with %d errors: loadstoreunit", vec_cnt, err_cnt);
 			
 			// Wait so that we can see the last result
 			#20; 
@@ -72,8 +76,14 @@ module immgen_tb;
 		end
 	end
    // Instantiate the Unit Under Test (UUT)
-   immgen dut(
-	   .imm_sel(imm_sel),
-	   .inst(inst),
-	   .imm(imm));
+   loadstoreunit dut(
+	   .funct3(funct3),
+	   .data_w(data_w),
+	   .addr(addr),
+       .data_rdata(data_rdata),
+       .mem_rw(mem_rw),
+       .data_r(data_r),
+       .data_addr(data_addr),
+       .data_wdata(data_wdata),
+       .data_we(data_we));
 endmodule

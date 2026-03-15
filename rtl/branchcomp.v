@@ -8,7 +8,9 @@ module branchcomp (
 );
 
 wire [31:0] b_n;
-wire [31:0] addout;
+/* verilator lint_off UNUSEDSIGNAL */
+wire [31:0] addout; // only MSB (sign bit) is used for comparison
+/* verilator lint_on UNUSEDSIGNAL */
 
 assign br_eq = a == b;
 assign b_n = ~b;

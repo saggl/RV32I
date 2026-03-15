@@ -11,7 +11,8 @@ module alu (
     wire [31:0] sel_b; // select b or n_b;
     wire [31:0] sltu_slt; // output of the slt extension
     wire [31:0] sll; // output shift left
-    wire [32:0] shift_right; // output shift right
+    /* verilator lint_off WIDTHTRUNC */
+    wire [31:0] shift_right; // output shift right (truncated from 33-bit signed shift)
 
 /*
 0 000 add 0
@@ -34,6 +35,7 @@ not used combos
 */
 // shift right arith or logic
 assign shift_right = $signed({(aluop[3]) ? a[31] : 1'b0, a[31:0]}) >>> b[4:0];
+/* verilator lint_on WIDTHTRUNC */
 
 // logic xor, or, and
 assign logicout = (aluop[1:0] == 2'b00) ? a ^ b :
@@ -44,7 +46,8 @@ assign logicout = (aluop[1:0] == 2'b00) ? a ^ b :
 // adder subtractor
 assign n_b = ~b;
 
-// select n_b for sub and slt
+// Select n_b for SUB and SLT/SLTU: aluop[3]=1 for SUB (1000), aluop[1]=1
+// for SLT (0010) and SLTU (0011). Both need B-negation for subtraction.
 assign sel_b = (aluop[3] | aluop[1]) ? n_b : b;
 
 // add or sub

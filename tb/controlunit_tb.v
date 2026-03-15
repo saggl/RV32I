@@ -52,7 +52,7 @@ module controlunit_tb;
 	begin
 		// Read the content of the file testvectors_hex.txt into the 
 		// array testvec. 
-		$readmemb("testbench/controlunit_testvec.txt", testvec);
+		$readmemb("tb/controlunit_testvec.txt", testvec);
 		err_cnt=0; // number of errors
 		vec_cnt=0; // number of vectors
 	end

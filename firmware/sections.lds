@@ -20,17 +20,22 @@ SECTIONS {
 
     .data : {
         . = ALIGN(4);
+        _data_start = .;
         *(.data)
         *(.data.*)
         . = ALIGN(4);
+        _data_end = .;
     } > RAM AT > FLASH
+    _data_lma = LOADADDR(.data);
 
     .bss : {
         . = ALIGN(4);
+        _bss_start = .;
         *(.bss)
         *(.bss.*)
         *(COMMON)
         . = ALIGN(4);
+        _bss_end = .;
     } > RAM
 
     _stack = ORIGIN(RAM) + LENGTH(RAM);

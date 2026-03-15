@@ -10,16 +10,13 @@ module loadstoreunit(
 // interpretion of funct3
 localparam [1:0] LB_LBU = 2'b00;
 localparam [1:0] LH_LHU = 2'b01;
-localparam [1:0] LW = 2'b10;
 
 localparam [1:0] SB = 2'b00;
 localparam [1:0] SH = 2'b01;
-localparam [1:0] SW = 2'b10;
 
 localparam [1:0] BYTE_0 = 2'b00;
 localparam [1:0] BYTE_1 = 2'b01;
 localparam [1:0] BYTE_2 = 2'b10;
-localparam [1:0] BYTE_3 = 2'b11;
 
 // byte/halfword to load; signed/unsigned extention
 wire [7:0] lb_sel;
@@ -39,13 +36,13 @@ assign lb_sel = (addr[1:0] == BYTE_0) ? data_rdata[7:0] :
                 (addr[1:0] == BYTE_2) ? data_rdata[23:16] :
                 data_rdata[31:24]; //BYTE_3
 
-// select signed or unsigned load
+// funct3[2] distinguishes signed (LB=000) vs unsigned (LBU=100) loads
 assign lb_s_u = funct3[2] ? {24'b0, lb_sel} : {{24{lb_sel[7]}}, lb_sel};
 
 // select the addressed halfword
 assign lh_sel = addr[1] ? data_rdata[31:16] : data_rdata[15:0];
 
-// select signed or unsigned load
+// funct3[2] distinguishes signed (LH=001) vs unsigned (LHU=101) loads
 assign lh_s_u = funct3[2] ? {16'b0, lh_sel} : {{16{lh_sel[15]}}, lh_sel};
 
 // final select lb,lh,lw data

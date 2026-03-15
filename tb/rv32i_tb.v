@@ -6,10 +6,15 @@ module rv32i_tb;
     reg [31:0] data_rdata;
 
     //Outputs
-    wire [31:0] inst_addr;  
+    wire [31:0] inst_addr;
     wire [31:0] data_addr;
     wire [31:0] data_wdata;
     wire [3:0] data_we;
+    wire trap;
+
+    // Tie off irq (no interrupts in unit test)
+    reg [2:0] irq;
+    initial irq = 3'b0;
 
    // Test clock 
    reg clk ; // in this version we do not really need the clock
@@ -37,7 +42,7 @@ module rv32i_tb;
 	begin
 		// Read the content of the file testvectors_hex.txt into the
 		// array testvec.
-		$readmemh("testbench/rv32i_testvec.txt", testvec);
+		$readmemh("tb/rv32i_testvec.txt", testvec);
 		err_cnt=0; // number of errors
 		vec_cnt=0; // number of vectors
 		// Apply reset before first posedge so PC initializes to 0
@@ -89,6 +94,8 @@ module rv32i_tb;
 		.inst_addr(inst_addr),
 		.data_rdata(data_rdata),
 		.data_addr(data_addr),
-        .data_wdata(data_wdata),
-        .data_we(data_we));
+		.data_wdata(data_wdata),
+		.data_we(data_we),
+		.irq(irq),
+		.trap(trap));
 endmodule

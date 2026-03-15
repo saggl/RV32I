@@ -84,6 +84,9 @@ module testbench_tb;
 		end
 	end
    // Instantiate the Unit Under Test (UUT)
+	// Tie off irq (no external interrupts in testbench)
+	wire [2:0] irq = 3'b0;
+
 	rv32i dut (
 		.clk(clk),
 		.reset(reset),
@@ -91,7 +94,8 @@ module testbench_tb;
 		.inst_addr(inst_addr),
 		.data_rdata(data_rdata),
 		.data_addr(data_addr),
-        .data_wdata(data_wdata),
-        .data_we(data_we),
+		.data_wdata(data_wdata),
+		.data_we(data_we),
+		.irq(irq),
 		.trap(trap));
 endmodule

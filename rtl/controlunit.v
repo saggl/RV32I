@@ -20,6 +20,7 @@ module controlunit(
 //////////////////////////////////////////////////////////////////////////////////
 // interpretion of the opcode
 localparam [4:0] LOAD = 5'b00000;
+// FENCE (opcode 00011) falls through to defaults - NOP on single-cycle in-order core
 localparam [4:0] OP_IMM = 5'b00100;
 localparam [4:0] AUIPC = 5'b00101;
 localparam [4:0] STORE = 5'b01000;
@@ -52,55 +53,57 @@ localparam [2:0] SRAI_SRLI = 3'b101;
 wire branch_taken;
 wire alu4_imm; // alu[4] if op_imm
 
-// pc select					  
+// pc select
 assign pc_sel = ((opcode == JALR) | (opcode == JAL) | branch_taken);
 
-// is branch taken 
+// is branch taken
 assign branch_taken = ((opcode == BRANCH) & (funct3 == BEQ) & br_eq) |
-					  ((opcode == BRANCH) & (funct3 == BNE) & ~br_eq) | 
-					  ((opcode == BRANCH) & (funct3 == BLT) & br_lt) |
-					  ((opcode == BRANCH) & (funct3 == BLTU) & br_lt) |
-					  ((opcode == BRANCH) & (funct3 == BGE) & ~br_lt) |
-					  ((opcode == BRANCH) & (funct3 == BGEU) & ~br_lt);
+                      ((opcode == BRANCH) & (funct3 == BNE) & ~br_eq) |
+                      ((opcode == BRANCH) & (funct3 == BLT) & br_lt) |
+                      ((opcode == BRANCH) & (funct3 == BLTU) & br_lt) |
+                      ((opcode == BRANCH) & (funct3 == BGE) & ~br_lt) |
+                      ((opcode == BRANCH) & (funct3 == BGEU) & ~br_lt);
 
-// imm selcet
+// imm select
 assign imm_sel = (opcode == STORE) ? 3'b001 : //S
-				 (opcode == BRANCH) ? 3'b010 : //B
-				 ((opcode == AUIPC) | (opcode == LUI)) ? 3'b011 : //U
-				 (opcode == JAL) ? 3'b101 : //J
-				 3'b000; //I
+                 (opcode == BRANCH) ? 3'b010 : //B
+                 ((opcode == AUIPC) | (opcode == LUI)) ? 3'b011 : //U
+                 (opcode == JAL) ? 3'b101 : //J
+                 3'b000; //I
 
 // We will write to registers when opcode is:
+// SYSTEM with funct3!=0 is a CSR instruction that writes rd
 assign reg_wen = (opcode == LOAD) | (opcode == OP_IMM) | (opcode == AUIPC) |
-				 (opcode == OP) | (opcode == LUI) | (opcode == JAL) | (opcode == JALR);
+                 (opcode == OP) | (opcode == LUI) | (opcode == JAL) | (opcode == JALR) |
+                 ((opcode == SYSTEM) & |funct3);
 
-// branch unsigned 
+// branch unsigned: funct3[1] distinguishes unsigned variants (BLTU=110, BGEU=111)
 assign br_un = (opcode == BRANCH) & funct3[1];
 
 // Select the a input of the ALU
 assign a_sel = (opcode == LUI) ? 2'b10 :
-			   ((opcode == AUIPC) | (opcode == BRANCH) | (opcode == JAL)) ? 2'b01 :
-			   2'b00;
+               ((opcode == AUIPC) | (opcode == BRANCH) | (opcode == JAL)) ? 2'b01 :
+               2'b00;
 
 // Select the b input of the ALU
 assign b_sel = (opcode == OP);
 
-// Bit 4 of alu_sel is funct7 if SLLI, SRAI or SRLI else 0 
+// Bit 4 of alu_sel is funct7 if SLLI, SRAI or SRLI else 0
 assign alu4_imm = (funct3[2:0] == SRAI_SRLI) ? funct7 : 1'b0;
 
 //alu select
-assign alu_sel = (opcode == OP) ? {funct7, funct3[2:0]} : 
-				 (opcode == OP_IMM) ? {alu4_imm, funct3[2:0]} : 
-				 4'b0000; //add
+assign alu_sel = (opcode == OP) ? {funct7, funct3[2:0]} :
+                 (opcode == OP_IMM) ? {alu4_imm, funct3[2:0]} :
+                 4'b0000; //add
 
-// We wil write to memory when opcode is STORE
+// We will write to memory when opcode is STORE
 assign mem_rw = (opcode == STORE);
 
 // Writeback select
 assign wb_sel = (opcode == LOAD) ? 2'b00 : //mem
-				((opcode == JALR) | (opcode == JAL)) ? 2'b10 :// pc+4
-				2'b01; //alu
+                ((opcode == JALR) | (opcode == JAL)) ? 2'b10 :// pc+4
+                2'b01; //alu
 
-// We wil trigger trap when opcode is SYSTEM
-assign trap = (opcode == SYSTEM); //ECALL and EBREAK
+// Trap on ECALL/EBREAK (SYSTEM with funct3==000), not on CSR instructions
+assign trap = (opcode == SYSTEM) & (funct3 == 3'b000);
 endmodule

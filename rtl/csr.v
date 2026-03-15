@@ -3,10 +3,11 @@ module csr(
     input clk,
     input reset,
     input [31:0] pc,
-    input [31:0] inst,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input [31:2] inst, // bits [11:7] (rd field) unused - CSR writes go through w_data
+    /* verilator lint_on UNUSEDSIGNAL */
     input [31:0] rs1,
     input [2:0] irq,
-    input [31:0] reset_vector,
 	output reg [31:0] csr,
     output csr_sel,
     output [31:0] pc_trap,
@@ -146,18 +147,13 @@ wire [4:0] opcode;
 wire [11:0] a_csr;
 wire [2:0] funct3;
 wire [4:0] a_rs1_uimm;
-wire [4:0] a_rd;
 wire [11:0] funct12;
 
 // Zicsr signals
 wire [31:0] uimm_rs1;
 wire [31:0] w_data;
-wire read_en;
 wire write_en;
 wire read_only;
-wire [1:0] lpl;
-wire illegal_exception;
-wire [1:0] current_pl = 2'b11; // M-mode only
 
 // Trap signals
 wire trap_ret;
@@ -179,10 +175,9 @@ wire [31:0] marchid;
 wire [31:0] mimpid;
 wire [31:0] mhartid;
 
-// Machine Status Registers (mstatus and mstatush)
+// Machine Status Registers
 wire [31:0] mstatus;
-wire [31:0] mstatush;
-wire SIE, SPIE, UBE, SPP, MPRV, SUM, MXR, TVM, TW, TSR, SD, SBE, MBE;
+wire SIE, SPIE, UBE, SPP, MPRV, SUM, MXR, TVM, TW, TSR, SD;
 wire [1:0] MPP, FS, XS;
 reg MIE_; //Global interrupt-enable bit
 reg MPIE; //holds the value of the interrupt-enable bit active prior to the trap, and MPP holds the previous privilege mode.
@@ -229,7 +224,6 @@ assign opcode = inst[6:2];
 assign a_csr = inst[31:20];
 assign funct3 = inst[14:12];
 assign a_rs1_uimm = inst[19:15];
-assign a_rd = inst[11:7];
 assign funct12 = inst[31:20];
 
 // select read csr value
@@ -258,20 +252,11 @@ assign uimm_rs1 = funct3[2] ? {27'b0, a_rs1_uimm} : rs1;
 assign w_data = (funct3[1:0] == 2'b01) ? uimm_rs1 :
                 (funct3[1:0] == 2'b10) ? csr | uimm_rs1 :
                 csr & ~uimm_rs1;
-//CSRRW[I], if rd=x0, then the instruction shall not read the CSR and shall not cause any of the side effects that might occur on a CSR read.
-assign read_en = ~(~funct3[1] & a_rd == 5'b0);
 //CSRRS/C[I], if rs1=x0, then the instruction will not write to the CSR at all, and so shall not cause any of the side effects that might otherwise occur on a CSR write, such as raising illegal instruction exceptions on accesses to read-only CSRs
 assign write_en = ~(funct3[1] & a_rs1_uimm == 5'b0) & csr_sel & ~read_only;
 
 //the top two bits (csr[11:10]) indicate whether the register is read/write (00, 01, or 10) or read-only (11)
 assign read_only = a_csr[11:10] == 2'b11;
-
-//The next two bits (csr[9:8]) encode the lowest privilege level that can access the CSR.
-assign lpl = a_csr[9:8];
-
-//1. 0x7B0-0x7BF are only visible to debug mode. Implementations should raise illegal instruction exceptions on machine-mode access to the latter set of registers and attempts to access a non-existent CSR raise an illegal instruction exception.
-//2. Attempts to access a CSR without appropriate privilege level or to write a read-only register also raise illegal instruction exceptions.
-assign illegal_exception = /*todo: non-existent CSR*/ (current_pl < lpl) | (read_only & write_en);
 
 //////////////////////////////////////////////////////////////////////////////
 // CSR read mux
@@ -402,7 +387,7 @@ end
 //////////////////////////////////////////////////////////////////////////////
 
 //Machine ISA Register misa
-assign misa = {mxl, 3'b0, ext};
+assign misa = {mxl, 4'b0, ext};
 assign mxl = 2'b01; // fix XLEN = 32
 assign ext = 26'h100; // only I
 
@@ -433,13 +418,14 @@ assign TVM = 1'b0;
 assign TW = 1'b0;
 assign TSR = 1'b0;
 assign SD = 1'b0;
-assign MBE = 1'b0;
-assign SBE = 1'b0;
 assign MPP = 2'b11;
 assign FS = 2'b00;
 assign XS = 2'b00;
-assign mstatus = {SD, 8'b0, TSR, TW, TVM, MXR, SUM, MPRV, XS, FS, MPP, SPP, MPIE, UBE, SPIE, MIE_, SIE};
-assign mstatush = {26'b0, MBE, SBE, 4'b0};
+// RISC-V Privileged Spec Figure 3.6: mstatus for RV32
+// Bits: 31=SD, 30:23=0, 22=TSR, 21=TW, 20=TVM, 19=MXR, 18=SUM, 17=MPRV,
+//       16:15=XS, 14:13=FS, 12:11=MPP, 10:9=VS(0), 8=SPP, 7=MPIE, 6=UBE,
+//       5=SPIE, 4=0, 3=MIE, 2=0, 1=SIE, 0=0
+assign mstatus = {SD, 8'b0, TSR, TW, TVM, MXR, SUM, MPRV, XS, FS, MPP, 2'b0, SPP, MPIE, UBE, SPIE, 1'b0, MIE_, 1'b0, SIE, 1'b0};
 
 always @(posedge clk) begin
 	if (reset) begin
@@ -484,8 +470,8 @@ assign SSIP = 1'b0;
 assign SEIE = 1'b0;
 assign STIE = 1'b0;
 assign SSIE = 1'b0;
-assign mip = {4'b0, MEIP, 1'b0, SEIP, 1'b0, MTIP, 1'b0, STIP, 1'b0, MSIP, 1'b0, SSIP, 1'b0};
-assign mie = {4'b0, MEIE, 1'b0, SEIE, 1'b0, MTIE, 1'b0, STIE, 1'b0, MSIE, 1'b0, SSIE, 1'b0};
+assign mip = {20'b0, MEIP, 1'b0, SEIP, 1'b0, MTIP, 1'b0, STIP, 1'b0, MSIP, 1'b0, SSIP, 1'b0};
+assign mie = {20'b0, MEIE, 1'b0, SEIE, 1'b0, MTIE, 1'b0, STIE, 1'b0, MSIE, 1'b0, SSIE, 1'b0};
 
 //Bits mip.MEIP and mie.MEIE are the interrupt-pending and interrupt-enable bits for machine- level external interrupts. MEIP is read-only in mip, and is set and cleared by a platform-specific interrupt controller.
 assign MEIP = irq[2]; /*platform-specific interrupt controller*/
@@ -563,7 +549,15 @@ always @(posedge clk) begin
 	if (reset) mcause <= 32'b0;
     else if (write_en & a_csr == MCAUSE) mcause <= w_data;
     //When a trap is taken into M-mode, mcause is written with a code indicating the event that caused the trap.
-    else if (trap) mcause <= 32'b0; // TODO: determine trap cause
+    // Interrupt causes use {1'b1, cause}: MEI=11, MTI=7, MSI=3
+    // Priority: MEI > MSI > MTI (per RISC-V spec)
+    else if (interrupt) begin
+        if (mip[11] & mie[11])      mcause <= {1'b1, 31'd11}; // Machine external interrupt
+        else if (mip[3] & mie[3])   mcause <= {1'b1, 31'd3};  // Machine software interrupt
+        else if (mip[7] & mie[7])   mcause <= {1'b1, 31'd7};  // Machine timer interrupt
+        else                        mcause <= 32'b0;
+    end
+    else if (exception) mcause <= 32'b0; // TODO: exception cause codes
 end
 
 //Machine Trap Value Register (mtval)
@@ -571,7 +565,9 @@ always @(posedge clk) begin
 	if (reset) mtval <= 32'b0;
     else if (write_en & a_csr == MTVAL) mtval <= w_data;
     //When a trap is taken into M-mode, mtval is either set to zero or written with exception-specific information to assist software in handling the trap.
-    else if (trap) mtval <= 32'b0; // TODO: set faulting address
+    // For interrupts, mtval is set to zero. For exceptions, set to faulting PC.
+    else if (interrupt) mtval <= 32'b0;
+    else if (exception) mtval <= pc;
 end
 
 endmodule

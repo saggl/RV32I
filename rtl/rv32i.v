@@ -1,20 +1,23 @@
 `timescale 1ns / 1ps
 module rv32i(
-   input clk,
+	input clk,
 	input reset,
-   input  [31:0] inst_rdata,
-   output [31:0] inst_addr,
-   input [31:0] data_rdata,
-   output [31:0] data_addr,
-   output [31:0] data_wdata,
-   output [3:0] data_we,
-   output trap
+	input [31:0] inst_rdata,
+	output [31:0] inst_addr,
+	input [31:0] data_rdata,
+	output [31:0] data_addr,
+	output [31:0] data_wdata,
+	output [3:0] data_we,
+	input [2:0] irq,
+	output trap
 );
 
 // Instruction Decoding
-wire [31:0] inst; // The output of the Instruction memory
+/* verilator lint_off UNUSEDSIGNAL */
+wire [31:0] inst; // The output of the Instruction memory (bits [1:0] unused per RV32I encoding)
+/* verilator lint_on UNUSEDSIGNAL */
 
-// Address controls 
+// Address controls
 reg [31:0] pc; // The Program counter (registered)
 wire [31:0] pc_next; // Next state value of the Program counter, PC' in the diagram
 wire [31:0] pc_plus_4; // The current value of PC + 4, default next memory address
@@ -24,16 +27,16 @@ wire [31:0] wb;
 wire [31:0] rs1;
 wire [31:0] rs2;
 // Imm. Gen
-wire [31:0] imm; 
+wire [31:0] imm;
 
 // ALU related
 wire [31:0] a; // One input of the ALU
 wire [31:0] b; // Other input of the ALU
 wire [31:0] alu; // The output of the ALU
-	
+
 // Data Memory
 wire [31:0] mem; // End result that will be written back to register file
-	
+
 // Control Signals
 wire pc_sel; // 0: pc+4, 1: alu
 wire [2:0] imm_sel;
@@ -47,79 +50,87 @@ wire [3:0] alu_sel;
 wire mem_rw;
 wire [1:0] wb_sel; // 0: mem, 1:alu, 2: pc+4
 
-// The Main Part of the RV32I processor 
+// CSR signals
+wire [31:0] csr_rdata;
+wire csr_sel;
+wire [31:0] pc_trap;
+wire pc_trap_sel;
+
+// The Main Part of the RV32I processor
 
 // The Program Counter
 always @ (posedge clk) begin
-	if (reset) pc <= 32'b0; // default program counter 
+	if (reset) pc <= 32'b0; // default program counter
 	else pc <= pc_next; // Copy next value to present
 end
 
-// Select next PC value
-assign pc_plus_4 = pc + 4; 
-assign pc_next = pc_sel ? alu : pc_plus_4;
+// Select next PC value: trap PC overrides branch/jump PC
+assign pc_plus_4 = pc + 4;
+assign pc_next = pc_trap_sel ? pc_trap :
+                 pc_sel ? alu : pc_plus_4;
 
 // Instantiate the Instruction Memory
 assign inst = inst_rdata;
 assign inst_addr = pc;
-										
+
 // Imm. Gen
 immgen i_imm (
-   .imm_sel(imm_sel),
-   .inst(inst[31:7]),
-   .imm(imm));
+	.imm_sel(imm_sel),
+	.inst(inst[31:7]),
+	.imm(imm));
 
 //  Register File
 regfile i_regf (
-   .a_rs1(inst[19:15]),
-   .a_rs2(inst[24:20]),
-   .a_rd(inst[11:7]),
-   .rs1(rs1),
-   .rs2(rs2),
-   .rd(wb),
-   .we(reg_wen),
-   .clk(clk));
+	.a_rs1(inst[19:15]),
+	.a_rs2(inst[24:20]),
+	.a_rd(inst[11:7]),
+	.rs1(rs1),
+	.rs2(rs2),
+	.rd(wb),
+	.we(reg_wen),
+	.clk(clk));
 
 // Branch Comp
 branchcomp i_branchcomp(
-   .a(rs1),
-   .b(rs2),
-   .br_un(br_un),
-   .br_eq(br_eq),
-   .br_lt(br_lt));
+	.a(rs1),
+	.b(rs2),
+	.br_un(br_un),
+	.br_eq(br_eq),
+	.br_lt(br_lt));
 
 // alu
-assign a = (a_sel == 2'b00) ? rs1 : 
+assign a = (a_sel == 2'b00) ? rs1 :
            (a_sel == 2'b01) ? pc :
            32'b0;
 
 assign b = b_sel ? rs2 : imm;
 
 alu i_alu (
-   .a(a),
-   .b(b),
-   .result(alu),
-   .aluop(alu_sel));	
+	.a(a),
+	.b(b),
+	.result(alu),
+	.aluop(alu_sel));
 
 loadstoreunit i_lsu(
-   .funct3(inst[14:12]),
-   .data_r(mem),
-   .addr(alu),
-   .mem_rw(mem_rw),
-   .data_w(rs2),
-   .data_rdata(data_rdata),
-   .data_addr(data_addr),
-   .data_we(data_we),
-   .data_wdata(data_wdata));
+	.funct3(inst[14:12]),
+	.data_r(mem),
+	.addr(alu),
+	.mem_rw(mem_rw),
+	.data_w(rs2),
+	.data_rdata(data_rdata),
+	.data_addr(data_addr),
+	.data_we(data_we),
+	.data_wdata(data_wdata));
 
-/// Select Writeback value
-assign wb = (wb_sel == 2'b00) ? mem :
+// Select Writeback value: CSR reads override normal writeback
+assign wb = csr_sel ? csr_rdata :
+            (wb_sel == 2'b00) ? mem :
             (wb_sel == 2'b01) ? alu :
             pc_plus_4;
 
 // The Control Unit
 controlunit i_cont (
-   .opcode(inst[6:2]),
+	.opcode(inst[6:2]),
 	.funct3(inst[14:12]),
 	.funct7(inst[30]),
 	.br_eq(br_eq),
@@ -133,5 +144,19 @@ controlunit i_cont (
 	.alu_sel(alu_sel),
 	.mem_rw(mem_rw),
 	.wb_sel(wb_sel),
-   .trap(trap));
+	.trap(trap));
+
+// CSR unit
+csr i_csr (
+	.clk(clk),
+	.reset(reset),
+	.pc(pc),
+	.inst(inst[31:2]),
+	.rs1(rs1),
+	.irq(irq),
+	.csr(csr_rdata),
+	.csr_sel(csr_sel),
+	.pc_trap(pc_trap),
+	.pc_trap_sel(pc_trap_sel));
+
 endmodule
