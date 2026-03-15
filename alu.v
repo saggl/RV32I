@@ -12,7 +12,6 @@ module alu (
     wire [31:0] sltu_slt; // output of the slt extension
     wire [31:0] sll; // output shift left
     wire [32:0] shift_right; // output shift right
-    wire cout; // carry out
 
 /*
 0 000 add 0

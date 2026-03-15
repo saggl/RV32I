@@ -1,0 +1,9 @@
+build/
+*.o
+*.vcd
+firmware/*.bin
+firmware/*.elf
+firmware/*.hex
+firmware/*.map
+firmware/mem.hex
+.DS_Store

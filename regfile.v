@@ -16,7 +16,7 @@ assign rs1 = a_rs1!=0 ? regfile[a_rs1] : 0;
 assign rs2 = a_rs2!=0 ? regfile[a_rs2] : 0;
 
 always @(posedge clk) begin
-	if (we)
+	if (we && a_rd != 5'b0)
 		regfile[a_rd] <= rd;
 end
 

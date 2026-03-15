@@ -29,20 +29,21 @@ module rv32i_tb;
 	reg [164:0] testvec [0:9];
 
    // The test clock generation
-   always				// process always triggers
-	begin
-		clk=1; #50;		// clk is 1 for 50 ns 
-		clk=0; #50;		// clk is 0 for 50 ns
-	end					// generate a 100 ns clock
+   initial clk = 0;
+   always #50 clk = ~clk;	// 100 ns clock period
 
    // Initialization
 	initial
 	begin
-		// Read the content of the file testvectors_hex.txt into the 
-		// array testvec. 
+		// Read the content of the file testvectors_hex.txt into the
+		// array testvec.
 		$readmemh("testbench/rv32i_testvec.txt", testvec);
 		err_cnt=0; // number of errors
 		vec_cnt=0; // number of vectors
+		// Apply reset before first posedge so PC initializes to 0
+		reset=1;
+		inst_rdata=32'h00000000;
+		data_rdata=32'hxxxxxxxx;
 	end
    // Tests
 	always @ (posedge clk)		// trigger with the test clock

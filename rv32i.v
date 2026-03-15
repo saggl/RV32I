@@ -23,8 +23,6 @@ wire [31:0] pc_plus_4; // The current value of PC + 4, default next memory addre
 wire [31:0] wb;
 wire [31:0] rs1;
 wire [31:0] rs2;
-wire [4:0] a_rs1;
-
 // Imm. Gen
 wire [31:0] imm; 
 
@@ -44,10 +42,10 @@ wire br_un;
 wire br_eq;
 wire br_lt;
 wire [1:0] a_sel; // 0: rs1, 1: pc, 2:zero
-wire b_sel; // 0: rs2, 1: imm
+wire b_sel; // 0: imm, 1: rs2
 wire [3:0] alu_sel;
 wire mem_rw;
-wire [1:0] wb_sel; // 0: mem, 1:alu, 2: pc+2
+wire [1:0] wb_sel; // 0: mem, 1:alu, 2: pc+4
 
 // The Main Part of the RV32I processor 
 

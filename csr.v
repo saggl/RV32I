@@ -7,13 +7,13 @@ module csr(
     input [31:0] rs1,
     input [2:0] irq,
     input [31:0] reset_vector,
-	output [31:0] csr,
+	output reg [31:0] csr,
     output csr_sel,
     output [31:0] pc_trap,
     output pc_trap_sel
 );
 
-// a_csr 
+// a_csr
 //Counters
 localparam [11:0] CYCLE = 12'hC00;
 //localparam [11:0] TIME = 12'hC01; RDTIME trap and in traphandler lw mtime
@@ -134,6 +134,12 @@ localparam [11:0] MHPMEVENT31 = 12'h33F;
 
 // interpretion of the opcode
 localparam [4:0] SYSTEM = 5'b11100;
+localparam [2:0] PRIV = 3'b000;
+localparam [11:0] MRET = 12'h302;
+
+//////////////////////////////////////////////////////////////////////////////
+// Wire/Reg declarations (all declarations before use for iverilog)
+//////////////////////////////////////////////////////////////////////////////
 
 // inst decoding
 wire [4:0] opcode;
@@ -141,43 +147,121 @@ wire [11:0] a_csr;
 wire [2:0] funct3;
 wire [4:0] a_rs1_uimm;
 wire [4:0] a_rd;
+wire [11:0] funct12;
+
+// Zicsr signals
+wire [31:0] uimm_rs1;
+wire [31:0] w_data;
+wire read_en;
+wire write_en;
+wire read_only;
+wire [1:0] lpl;
+wire illegal_exception;
+wire [1:0] current_pl = 2'b11; // M-mode only
+
+// Trap signals
+wire trap_ret;
+wire [31:0] mtvec_ext;
+wire interrupt;
+// TODO: implement exception detection
+wire exception = 1'b0;
+// TODO: refine trap detection
+wire trap = exception | interrupt;
+
+// Machine ISA Register misa
+wire [31:0] misa;
+wire [1:0] mxl;
+wire [25:0] ext;
+
+// Machine Information Registers
+wire [31:0] mvendorid;
+wire [31:0] marchid;
+wire [31:0] mimpid;
+wire [31:0] mhartid;
+
+// Machine Status Registers (mstatus and mstatush)
+wire [31:0] mstatus;
+wire [31:0] mstatush;
+wire SIE, SPIE, UBE, SPP, MPRV, SUM, MXR, TVM, TW, TSR, SD, SBE, MBE;
+wire [1:0] MPP, FS, XS;
+reg MIE_; //Global interrupt-enable bit
+reg MPIE; //holds the value of the interrupt-enable bit active prior to the trap, and MPP holds the previous privilege mode.
+
+// Machine Trap-Vector Base-Address Register (mtvec)
+wire [31:0] mtvec;
+reg [1:0] MODE;
+reg [29:0] BASE;
+
+// Machine Interrupt Registers (mip and mie)
+wire [31:0] mip; //containing information on pending interrupts
+wire [31:0] mie; //containing interrupt enable bits
+wire MEIP, SEIP, MTIP, STIP, MSIP, SSIP;
+reg MEIE, MTIE, MSIE;
+wire SEIE, STIE, SSIE;
+
+// Hardware Performance Monitor
+reg [63:0] mcycle;
+reg [63:0] minstret;
+wire [63:0] mhpmcounter3_31;
+wire [31:0] mhpmevent3_31;
+
+// Machine Counter-Inhibit CSR (mcountinhibit)
+wire [31:0] mcountinhibit;
+reg IR, CY;
+
+// Machine Scratch Register
+reg [31:0] mscratch;
+
+// Machine Exception Program Counter
+reg [31:0] mepc;
+
+// Machine Cause Register
+reg [31:0] mcause;
+
+// Machine Trap Value Register
+reg [31:0] mtval;
+
+//////////////////////////////////////////////////////////////////////////////
+// Instruction decoding assigns
+//////////////////////////////////////////////////////////////////////////////
 
 assign opcode = inst[6:2];
 assign a_csr = inst[31:20];
 assign funct3 = inst[14:12];
 assign a_rs1_uimm = inst[19:15];
 assign a_rd = inst[11:7];
+assign funct12 = inst[31:20];
 
 // select read csr value
 assign csr_sel = (opcode == SYSTEM) & |funct3;
 
-// select pc
-assign pc_trap_sel = exception | interrupt | trap_ret;
-assign pc_trap = trap_ret ? mepc : 
-                 exception ? mtvec_ext :
-                 interrupt & mtvec[0] ? mtvec_ext + mcause << 2 :
-                 mtvec_ext;
+//////////////////////////////////////////////////////////////////////////////
+// Trap PC selection
+//////////////////////////////////////////////////////////////////////////////
 
-wire trap_ret;
 assign trap_ret = (opcode == SYSTEM) & (funct3 == PRIV) & (funct12 == MRET);
-wire [31:0] mtvec_ext;
 assign mtvec_ext = {mtvec[31:2], 2'b00};
 
-//Chapter 9: “Zicsr”, Control and Status Register (CSR) Instructions, Version 2.0
-wire [31:0] uimm_rs1;
-wire [31:0] w_data;
-wire read_en;
-wire write_en;
+assign pc_trap_sel = exception | interrupt | trap_ret;
+assign pc_trap = trap_ret ? mepc :
+                 exception ? mtvec_ext :
+                 (interrupt & mtvec[0]) ? (mtvec_ext + (mcause << 2)) :
+                 mtvec_ext;
+
+//////////////////////////////////////////////////////////////////////////////
+//Chapter 9: "Zicsr", Control and Status Register (CSR) Instructions, Version 2.0
+//////////////////////////////////////////////////////////////////////////////
+
 // select immediate or register operand
-assign uimm_rs1 = funct3[2] ? {{27'b0, a_rs1_uimm} : rs1;
+assign uimm_rs1 = funct3[2] ? {27'b0, a_rs1_uimm} : rs1;
 // select data write, set or clear
 assign w_data = (funct3[1:0] == 2'b01) ? uimm_rs1 :
-                (funct3[1:0] == 2'b10) ? r_data | uimm_rs1 :
-                r_data & ~uimm_rs1;
+                (funct3[1:0] == 2'b10) ? csr | uimm_rs1 :
+                csr & ~uimm_rs1;
 //CSRRW[I], if rd=x0, then the instruction shall not read the CSR and shall not cause any of the side effects that might occur on a CSR read.
 assign read_en = ~(~funct3[1] & a_rd == 5'b0);
 //CSRRS/C[I], if rs1=x0, then the instruction will not write to the CSR at all, and so shall not cause any of the side effects that might otherwise occur on a CSR write, such as raising illegal instruction exceptions on accesses to read-only CSRs
-assign write_en = ~(funct3[1] & a_rs1_uimm == 5'b0) & csr_wen;
+assign write_en = ~(funct3[1] & a_rs1_uimm == 5'b0) & csr_sel & ~read_only;
 
 //the top two bits (csr[11:10]) indicate whether the register is read/write (00, 01, or 10) or read-only (11)
 assign read_only = a_csr[11:10] == 2'b11;
@@ -185,11 +269,14 @@ assign read_only = a_csr[11:10] == 2'b11;
 //The next two bits (csr[9:8]) encode the lowest privilege level that can access the CSR.
 assign lpl = a_csr[9:8];
 
-//1. 0x7B0–0x7BF are only visible to debug mode. Implementations should raise illegal instruction exceptions on machine-mode access to the latter set of registers and attempts to access a non-existent CSR raise an illegal instruction exception. 
-//2. Attempts to access a CSR without appropriate privilege level or to write a read-only register also raise illegal instruction exceptions. 
-assign illegal_exception = /*todo: non-existen CSR*/ (current_pl < lpl) | (read_only & write_en);
+//1. 0x7B0-0x7BF are only visible to debug mode. Implementations should raise illegal instruction exceptions on machine-mode access to the latter set of registers and attempts to access a non-existent CSR raise an illegal instruction exception.
+//2. Attempts to access a CSR without appropriate privilege level or to write a read-only register also raise illegal instruction exceptions.
+assign illegal_exception = /*todo: non-existent CSR*/ (current_pl < lpl) | (read_only & write_en);
 
-//csr read 
+//////////////////////////////////////////////////////////////////////////////
+// CSR read mux
+//////////////////////////////////////////////////////////////////////////////
+
 always @* begin
     case(a_csr)
         CYCLE: csr = mcycle[31:0];
@@ -310,45 +397,31 @@ always @* begin
     endcase
 end
 
-// interpretion of the opcode
-localparam [4:0] SYSTEM = 5'b11100;
-
+//////////////////////////////////////////////////////////////////////////////
+// CSR register implementations
+//////////////////////////////////////////////////////////////////////////////
 
 //Machine ISA Register misa
-wire [31:0] misa;
-wire [1:0] mxl;
-wire [25:0] ext;
 assign misa = {mxl, 3'b0, ext};
-assign [1:0] mxl = 2'b1; // fix XLEN = 32
-assign [25:0] ext = 26'b100000000 // only I 
+assign mxl = 2'b01; // fix XLEN = 32
+assign ext = 26'h100; // only I
 
 //Machine Vendor ID Register mvendorid
 //This register must be readable in any implementation, but a value of 0 can be returned to indicate the field is not implemented or that this is a non-commercial implementation.
-wire [31:0] mvendorid;
 assign mvendorid = 32'b0;
 
 //Machine Architecture ID Register marchid
 //This register must be readable in any implementation, but a value of 0 can be returned to indicate the field is not implemented.
-wire [31:0] marchid;
 assign marchid  = 32'b0;
 
 //Machine Implementation ID Register mimpid
 //This register must be readable in any implementation, but a value of 0 can be returned to indicate that the field is not implemented.
-wire [31:0] mimpid;
 assign mimpid  = 32'b0;
 
 //Hart ID Register mhartid
-wire [31:0] mhartid;
 assign mhartid  = 32'b0;
 
 //Machine Status Registers (mstatus and mstatush)
-wire [31:0] mstatus;
-wire [31:0] mstatush;
-wire SIE, SPIE, UBE, SPP, MPRV, SUM, MXR, TVM, TW, TSR, SD, SBE, MBE;
-wire [1:0] MPP, FS, XS;
-reg MIE_; //Global interrupt-enable bit
-reg MPIE; //holds the value of the interrupt-enable bit active prior to the trap, and MPP holds the previous privilege mode.
-
 assign SIE = 1'b0;
 assign SPIE = 1'b0;
 assign UBE = 1'b0;
@@ -360,10 +433,12 @@ assign TVM = 1'b0;
 assign TW = 1'b0;
 assign TSR = 1'b0;
 assign SD = 1'b0;
+assign MBE = 1'b0;
+assign SBE = 1'b0;
 assign MPP = 2'b11;
 assign FS = 2'b00;
 assign XS = 2'b00;
-assign mstatus = {SD, 8'b0, TSR, TW, TVM, MXR, SUM MPRV, XS, FS, MPP, SPP, MPIE, UBE, SPIE, MIE_, SIE};
+assign mstatus = {SD, 8'b0, TSR, TW, TVM, MXR, SUM, MPRV, XS, FS, MPP, SPP, MPIE, UBE, SPIE, MIE_, SIE};
 assign mstatush = {26'b0, MBE, SBE, 4'b0};
 
 always @(posedge clk) begin
@@ -387,9 +462,6 @@ always @(posedge clk) begin
 end
 
 //Machine Trap-Vector Base-Address Register (mtvec)
-wire [31:0] mtvec;
-reg [1:0] MODE;
-reg [29:0] BASE;
 assign mtvec = {BASE, MODE};
 
 always @(posedge clk) begin
@@ -406,11 +478,6 @@ end
 //When MODE=Direct, all traps into machine mode cause the pc to be set to the address in the BASE field. When MODE=Vectored, all synchronous exceptions into machine mode cause the pc to be set to the address in the BASE field, whereas interrupts cause the pc to be set to the address in the BASE field plus four times the interrupt cause number.
 
 //Machine Interrupt Registers (mip and mie)
-wire [31:0] mip; //containing information on pending interrupts
-wire [31:0] mie; //containing interrupt enable bits
-wire MEIP, SEIP, MTIP, STIP, MSIP, SSIP;
-reg MEIE, MTIE, MSIE;
-wire SEIE, STIE, SSIE;
 assign SEIP = 1'b0;
 assign STIP = 1'b0;
 assign SSIP = 1'b0;
@@ -424,36 +491,27 @@ assign mie = {4'b0, MEIE, 1'b0, SEIE, 1'b0, MTIE, 1'b0, STIE, 1'b0, MSIE, 1'b0, 
 assign MEIP = irq[2]; /*platform-specific interrupt controller*/
 always @(posedge clk) begin
 	if (reset) MEIE <= 1'b0;
-    else (write_en & a_csr == MIE) MEIE <= w_data[11];
+    else if (write_en & a_csr == MIE) MEIE <= w_data[11];
 end
 
 //Bits mip.MTIP and mie.MTIE are the interrupt-pending and interrupt-enable bits for machine timer interrupts. MTIP is read-only in mip, and is cleared by writing to the memory-mapped machine-mode timer compare register.
 assign MTIP = irq[1]; /*platform-specific interrupt controller*/
 always @(posedge clk) begin
 	if (reset) MTIE <= 1'b0;
-    else (write_en & a_csr == MIE) MTIE <= w_data[7];
+    else if (write_en & a_csr == MIE) MTIE <= w_data[7];
 end
 
 //Bits mip.MSIP and mie.MSIE are the interrupt-pending and interrupt-enable bits for machine- level software interrupts. MSIP is read-only in mip, and is written by accesses to memory-mapped control registers, which are used by remote harts to provide machine-level interprocessor interrupts. A hart can write its own MSIP bit using the same memory-mapped control register.
 assign MSIP = irq[0]; /*platform-specific interrupt controller*/
 always @(posedge clk) begin
 	if (reset) MSIE <= 1'b0;
-    else (write_en & a_csr == MIE) MSIE <= w_data[3];
+    else if (write_en & a_csr == MIE) MSIE <= w_data[3];
 end
 
-//An interrupt i will be taken if bit i is set in both mip and mie, and if interrupts are globally enabled. By default, M-mode interrupts are globally enabled if the hart’s current privilege mode is less than M, or if the current privilege mode is M and the MIE bit in the mstatus register is set.
-wire interrupt;
+//An interrupt i will be taken if bit i is set in both mip and mie, and if interrupts are globally enabled. By default, M-mode interrupts are globally enabled if the hart's current privilege mode is less than M, or if the current privilege mode is M and the MIE bit in the mstatus register is set.
 assign interrupt = |(mip & mie) & MIE_;
 
-//The non-maskable interrupt is not made visible via the mip register as its presence is implicitly known when executing the NMI trap handler
-
-//Interrupt cause number i (as reported in CSR mcause, Section 3.1.15) corresponds with bit i in both mip and mie.
-
-//Multiple simultaneous interrupts destined for different privilege modes are handled in decreasing order of destined privilege mode. Multiple simultaneous interrupts destined for the same privilege mode are handled in the following decreasing priority order: MEI, MSI, MTI. Synchronous exceptions are of lower priority than all interrupts.
-
 //Hardware Performance Monitor
-
-reg [63:0] mcycle;
 always @(posedge clk) begin
 	if (reset) mcycle <= 64'b0;
     else if (write_en & a_csr == MCYCLE) mcycle[31:0] <= w_data;
@@ -461,7 +519,6 @@ always @(posedge clk) begin
     else if (~CY) mcycle <= mcycle + 1;
 end
 
-reg [63:0] minstret;
 always @(posedge clk) begin
 	if (reset) minstret <= 64'b0;
     else if (write_en & a_csr == MINSTRET) minstret[31:0] <= w_data;
@@ -470,79 +527,51 @@ always @(posedge clk) begin
 end
 
 //All counters should be implemented, but a legal implementation is to hard-wire both the counter and its corresponding event selector to 0.
-wire [63:0] mhpmcounter3_31;
 assign mhpmcounter3_31 = 64'b0;
-wire [31:0] mhpmevent3_31;
-assign mhpmevent3_31 0 32'b0;
+assign mhpmevent3_31 = 32'b0;
 
 //Machine Counter-Inhibit CSR (mcountinhibit)
-wire [31:0] mcountinhibit;
-reg IR, CY;
-assign mcountinhibit = {29'b1, IR, 1'b0, CY} //HPM31-HPM3 = 1
+assign mcountinhibit = {{29{1'b1}}, IR, 1'b0, CY}; //HPM31-HPM3 = 1
 
 always @(posedge clk) begin
 	if (reset) begin
         IR <= 1'b0;
         CY <= 1'b0;
     end
-    else (write_en & a_csr == MCOUNTINHIBIT) begin
+    else if (write_en & a_csr == MCOUNTINHIBIT) begin
         IR <= w_data[2];
         CY <= w_data[0];
     end
 end
 
 //Machine Scratch Register (mscratch)
-reg [31:0] mscratch;
 always @(posedge clk) begin
 	if (reset) mscratch <= 32'b0;
-    else  (write_en & a_csr == MSCRATCH) mscratch <= w_data;
+    else if (write_en & a_csr == MSCRATCH) mscratch <= w_data;
 end
 
 //Machine Exception Program Counter (mepc)
-reg [31:0] mepc;
-
 always @(posedge clk) begin
-	if (reset) mepc_ <= 32'b0;
+	if (reset) mepc <= 32'b0;
     else if (write_en & a_csr == MEPC) mepc <= {w_data[31:2], 2'b0};
     //When a trap is taken into M-mode, mepc is written with the virtual address of the instruction that was interrupted or that encountered the exception.
-    else if (trap) mepc_[31:0] <= {pc[31:2], 2'b0};
+    else if (trap) mepc[31:0] <= {pc[31:2], 2'b0};
 end
 
 //Machine Cause Register (mcause)
-reg [31:0] mcause;
-
 always @(posedge clk) begin
 	if (reset) mcause <= 32'b0;
     else if (write_en & a_csr == MCAUSE) mcause <= w_data;
     //When a trap is taken into M-mode, mcause is written with a code indicating the event that caused the trap.
-    else if (trap) mcause <= /*trap cause*/;
+    else if (trap) mcause <= 32'b0; // TODO: determine trap cause
 end
-//The Interrupt bit in the mcause register is set if the trap was caused by an interrupt. The Exception Code field contains a code identifying the last exception or interrupt.
 
 //Machine Trap Value Register (mtval)
-reg [31:0] mtval;
-
 always @(posedge clk) begin
 	if (reset) mtval <= 32'b0;
     else if (write_en & a_csr == MTVAL) mtval <= w_data;
     //When a trap is taken into M-mode, mtval is either set to zero or written with exception-specific information to assist software in handling the trap.
-    else if (trap) mtval <= /**/;
+    else if (trap) mtval <= 32'b0; // TODO: set faulting address
 end
-
-
-//When a breakpoint, address-misaligned, access-fault, or page-fault exception occurs on an instruc- tion fetch, load, or store, mtval is written with the faulting virtual address. On an illegal instruction trap, mtval may be written with the first XLEN or ILEN bits of the faulting instruction as de- scribed below. For other traps, mtval is set to zero, but a future standard may redefine mtval’s setting for other traps.
-
-//For misaligned loads and stores that cause access-fault or page-fault exceptions, mtval will contain the virtual address of the portion of the access that caused the fault. For instruction access-fault or page-fault exceptions on systems with variable-length instructions, mtval will contain the virtual address of the portion of the instruction that caused the fault while mepc will point to the beginning of the instruction.
-
-//more too read.....
-
-
-
-//Machine-Level Memory-Mapped Registers
-//Machine Timer Registers (mtime and mtimecmp)
-
-//A machine timer interrupt becomes pending whenever mtime contains a value greater than or equal to mtimecmp, treating the values as unsigned integers. The interrupt remains posted until mtimecmp becomes greater than mtime (typically as a result of writing mtimecmp). The interrupt will only be taken if interrupts are enabled and the MTIE bit is set in the mie register.
-
-
 
 endmodule

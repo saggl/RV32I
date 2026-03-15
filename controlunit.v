@@ -71,14 +71,15 @@ assign imm_sel = (opcode == STORE) ? 3'b001 : //S
 				 3'b000; //I
 
 // We will write to registers when opcode is:
-assign reg_wen = ~((opcode == STORE) | (opcode == BRANCH));
+assign reg_wen = (opcode == LOAD) | (opcode == OP_IMM) | (opcode == AUIPC) |
+				 (opcode == OP) | (opcode == LUI) | (opcode == JAL) | (opcode == JALR);
 
 // branch unsigned 
 assign br_un = (opcode == BRANCH) & funct3[1];
 
 // Select the a input of the ALU
 assign a_sel = (opcode == LUI) ? 2'b10 :
-			   (opcode == AUIPC) | (opcode == BRANCH) | (opcode == JAL) ? 2'b01 :
+			   ((opcode == AUIPC) | (opcode == BRANCH) | (opcode == JAL)) ? 2'b01 :
 			   2'b00;
 
 // Select the b input of the ALU

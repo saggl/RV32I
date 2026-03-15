@@ -9,7 +9,6 @@ module branchcomp (
 
 wire [31:0] b_n;
 wire [31:0] addout;
-wire cout;
 
 assign br_eq = a == b;
 assign b_n = ~b;
