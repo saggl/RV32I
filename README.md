@@ -1,19 +1,56 @@
 # RV32I
-Single cycle RV32I
 
-==> llvm
-To use the bundled libc++ please add the following LDFLAGS:
-  LDFLAGS="-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib"
+> A compact, hackable **single-cycle RISC-V RV32I core** in Verilog.
 
-llvm is keg-only, which means it was not symlinked into /usr/local,
-because macOS already provides this software and installing another version in
-parallel can cause all kinds of trouble.
+This project is built for learning and experimentation: clear RTL modules, small focused testbenches, and fast local simulation with Icarus Verilog.
 
-If you need to have llvm first in your PATH, run:
-  echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
+## What’s here
 
-For compilers to find llvm you may need to set:
-  export LDFLAGS="-L/usr/local/opt/llvm/lib"
-  export CPPFLAGS="-I/usr/local/opt/llvm/include"
-/usr/local/opt/llvm@9/bin/clang -c hello.c --target=riscv32
-/usr/local/opt/llvm@9/bin/llvm-objdump hello.o -d 
+- Single-cycle RV32I-style core (`rv32i.v`)
+- Key building blocks:
+  - `controlunit.v`
+  - `alu.v`
+  - `immgen.v`
+  - `regfile.v`
+  - `branchcomp.v`
+  - `loadstoreunit.v`
+- Integration testbench: `testbench.v`
+- Module testbenches: `*_tb.v`
+- Assembly test programs: root `*.S` + `tests/*.S`
+
+## Quick start
+
+### Requirements
+
+- `iverilog`
+- `vvp`
+- (optional) RISC-V GNU toolchain for assembly/object workflows (`riscv64-unknown-elf-*`)
+
+### Run module + core testbenches
+
+```bash
+bash test.sh
+```
+
+### Run top-level integration bench
+
+```bash
+bash full.sh
+```
+
+## Project layout
+
+- `rv32i.v` + component `*.v` files — core RTL
+- `*_tb.v` and `testbench.v` — simulation benches
+- `tests/` — additional assembly tests
+- `test.sh` — runs module benches + `rv32i_tb`
+- `full.sh` — runs top-level integration simulation
+
+## Status
+
+- ✅ Great for architecture exploration and iterative RTL improvements
+- ⚠️ Still a personal/educational project (not a production-ready core)
+
+---
+
+If you want, next step can be adding a minimal `CONTRIBUTING.md` and `LICENSE` so the repo is easier to share publicly.
