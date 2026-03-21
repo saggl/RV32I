@@ -1,0 +1,14 @@
+build/
+*.o
+*.vcd
+firmware/*.bin
+firmware/*.elf
+firmware/*.hex
+firmware/*.map
+.DS_Store
+
+# cocotb/verilator artifacts
+sim_build/
+results.xml
+__pycache__/
+*.pyc
